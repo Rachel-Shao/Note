@@ -182,7 +182,7 @@ func (s *yurtHubServer) Run() {
    }
    ```
 
-   上文中`return r.Handler(http.HandlerFunc(f))`里的`http.HandlerFunc(f)`就是把传入的f强制转换成`HandlerFunc`类型，这样f就可以实现Handler接口。[这样，之后的程序中依据`path`会调用`path`对应的`handler.ServeHTTP(rw, req)`，就可以转入f函数的处理逻辑了？???]
+   上文中`return r.Handler(http.HandlerFunc(f))`里的`http.HandlerFunc(f)`就是把传入的f强制转换成`HandlerFunc`类型，这样f就可以实现Handler接口。这样，之后的程序中依据`path`会调用`path`对应的`handler.ServeHTTP(rw, req)`，就可以转入f函数的处理逻辑了。
 
 2. server创建server := &http.Server{}
 
@@ -318,9 +318,10 @@ func (sh serverHandler) ServeHTTP(rw ResponseWriter, req *Request) {
   // 初始化
 	handler := sh.srv.Handler
   // 这个handler由创建http server的时候指定的handler
-  //（这里是s.mux也就是由mux.NewRouter()新建的那个map里对应的handler列表）//需要自己添加handler进去吧？？？
+  // 这里是s.mux也就是由mux.NewRouter()新建的那个Router
+  // 已由s.mux.PathPrefix("/").Handler(s.proxyHandler)添加了处理方法
 	if handler == nil {
-    // 使用默认的多路复用器
+    // 使用默认的多路复用器，具体负责请求的分发
 		handler = DefaultServeMux
 	}
 	if req.RequestURI == "*" && req.Method == "OPTIONS" {
@@ -341,17 +342,13 @@ type Handler interface {
 }
 ```
 
-如果是自定义的多路复用器，则自己构造响应。[（意思是自己往map表里加东西吗？这个过程在哪里？没找到啊）???]
+- 这里openyurt是使用自己创建的多路复用器mux
 
-- [这里openyurt是使用自定义的多路复用器？???]
+  由api路径去匹配handler方法的过程由`github.com/gorilla/mux`里的逻辑实现，然后在调用handler方法的ServeHTTP()方法。
 
-  也就是自己去实现由api路径去匹配handler方法的过程？这个过程在哪里？然后在调用handler方法的ServeHTTP()方法。
+  其中api路径和handler方法的注册过程发生在`s.mux.PathPrefix("/").Handler(s.proxyHandler)`中，`s.proxyHandler`中包含了一系列处理方法的逻辑
 
-  其中api路径和handler方法的注册过程发生在哪里？是`s.mux.PathPrefix("/").Handler(s.proxyHandler)`吗？
-
-
-
-- 如果是默认的DefaultServeMux，其ServeHTTP()方法定义在ServeMux结构中：
+- 如果是默认的DefaultServeMux，其ServeHTTP()方法定义在ServeMux结构中（k8s中有涉及）：
 
   mux的ServeHTTP方法通过调用其Handler方法寻找注册到路由上的handler函数，并调用该函数的ServeHTTP方法。
 
@@ -506,10 +503,6 @@ ServeMux和handler处理器函数的连接桥梁就是Handler接口。ServeMux�
      s.mux.PathPrefix("/").Handler(s.proxyHandler)
      ps.mux.PathPrefix("/").Handler(h)
      ~~~
-
-     `PathPrefix()`作用：[???]
-
-     ....
 
 3. 创建http server：
 
