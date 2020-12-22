@@ -528,7 +528,7 @@ ServeMux和handler处理器函数的连接桥梁就是Handler接口。ServeMux�
    err := server.ListenAndServe()
    ~~~
 
-5. 以下内容开始走`/usr/local/go/src/net/http/server.go/ListenAndServer()`函数的逻辑，包括
+5. 以下内容开始走`/usr/local/go/src/net/http/server.go/ListenAndServer()`函数的逻辑，包括：
 
    - 并发地对每个连接建立一个新服务对象
    - 读取每个连接请求
