@@ -195,7 +195,7 @@ func CreateServerChain(completedOptions completedServerRunOptions, stopCh <-chan
 
 7. aggregatorServer创建完成并返回，后续启动安全端口server，即启动https服务
 
-![image-20201216223104052](/Users/shaoxinyue/Library/Application Support/typora-user-images/image-20201216223104052.png)
+![image-20201216223104052](image/CreateServerChain.png)
 
 
 
@@ -328,7 +328,7 @@ func (c completedConfig) New(delegationTarget genericapiserver.DelegationTarget)
 
 这里先看`InstallLegacyAPI()`，整体流程是这样的：
 
-![image-20201215135326775](/Users/shaoxinyue/Library/Application Support/typora-user-images/image-20201215135326775.png)
+![image-20201215135326775](image/InstallLegacyAPI.png)
 
 ~~~go
 // InstallLegacyAPI will install the legacy APIs for the restStorageProviders if they are enabled.
