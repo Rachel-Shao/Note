@@ -901,7 +901,7 @@ func (c CurlyRouter) selectRoutes(ws *WebService, requestTokens []string) sortab
 
 可以知道长函数中对每个action.Verb，都会定义一个route，帮它绑定handler之类的，然后加入到routes中，routes最终会通过`ws.Route(route)`加入到`ws.routes`中（具体细节中，`builder.Build()`会将两个类型的Function/function作对应）
 
-反正就是，这个Function就是我们在长函数中生成的那个handler！！
+反正就是，这个Function就是我们在长函数中生成的那个`handler`！！
 
 所以所以所以，一路下来就可以最终匹配到我们定义的`handler`，在我们定义的`handler`中，传入的参数是`(res.ResponseWriter, req.Request)`，而且由上面的分析可以知道，终极`handler`的具体逻辑中会修改传入的`res.ResponseWriter`并返回，所以执行完就可以结束响应了！
 
