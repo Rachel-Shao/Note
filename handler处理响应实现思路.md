@@ -1,4 +1,4 @@
-# handler处理响应实现思路
+# Handler处理响应实现思路
 
 </br></br>
 
@@ -6,9 +6,9 @@
 
 ## apiserver实现思路
 
-下图是注册路由过程中handler的生成以及具体链接到后端etcd进行操作的调用过程（以get和create方法为例）
+下图是注册路由过程中`handler`的生成以及具体链接到后端`etcd`进行操作的调用过程（以get和create方法为例）
 
-![handler处理流程](/Users/shaoxinyue/Desktop/handler处理流程.png)
+![handler处理流程](image/handler处理流程.png)
 
 ### 1.长函数
 
