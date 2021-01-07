@@ -880,7 +880,7 @@ func (c CurlyRouter) detectRoute(candidateRoutes sortableCurlyRoutes, httpReques
 }
 ```
 
-`detectRoute()`做的就是从candidateRoutes中选择一个返回，所以要找到`routes.Function()`的定义需再看`candidateRoutes`的生成:
+`detectRoute()`做的就是从`candidateRoutes`中选择一个返回，所以要找到`routes.Function()`的定义需再看`candidateRoutes`的生成:
 
 ```go
 // selectRoutes return a collection of Route from a WebService that matches the path tokens from the request.
@@ -903,7 +903,7 @@ func (c CurlyRouter) selectRoutes(ws *WebService, requestTokens []string) sortab
 
 反正就是，这个Function就是我们在长函数中生成的那个handler！！
 
-所以所以所以，一路下来就可以最终匹配到我们定义的handler，在我们定义的handler中，传入的参数是`(res.ResponseWriter, req.Request)`，而且由上面的分析可以知道，终极handler的具体逻辑中会修改传入的res.ResponseWriter并返回，所以执行完就可以结束响应了！
+所以所以所以，一路下来就可以最终匹配到我们定义的`handler`，在我们定义的`handler`中，传入的参数是`(res.ResponseWriter, req.Request)`，而且由上面的分析可以知道，终极`handler`的具体逻辑中会修改传入的`res.ResponseWriter`并返回，所以执行完就可以结束响应了！
 
 ##### ③finishRequest()
 
