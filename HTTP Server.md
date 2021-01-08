@@ -540,6 +540,8 @@ ServeMux和handler处理器函数的连接桥梁就是Handler接口。ServeMux�
 
 > http server参考：
 >
+> https://www.jb51.net/article/174477.htm（灰常好）
+>
 > https://studygolang.com/articles/010298
 >
 > https://www.jianshu.com/p/be3d9cdc680b
