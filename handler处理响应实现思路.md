@@ -252,6 +252,114 @@ func (e *Store) Get(ctx context.Context, name string, options *metav1.GetOptions
 }
 ```
 
+以`pod`资源为例来看看，在给`apis`注册路由的时候，调用了`InstallLegacyAPI()`函数，这个函数主要：
+
+- 通过`NewLegacyRESTStorage()`创建各个资源的`RESTStorage`
+- 通过`InstallLegacyAPIGroup()`完成路由安装（......[含长函数`registerResourceHandlers()`]）
+
+来看`pod`资源的`RESTStorage`创建过程：
+
+~~~go
+podStorage, err := podstore.NewStorage(
+		restOptionsGetter,
+		nodeStorage.KubeletConnectionInfo,
+		c.ProxyTransport,
+		podDisruptionClient,
+	)
+~~~
+
+来看`PodStorage`的结构：
+
+```go
+// PodStorage includes storage for pods and all sub resources
+type PodStorage struct {
+   Pod                 *REST
+   Binding             *BindingREST
+   LegacyBinding       *LegacyBindingREST
+   Eviction            *EvictionREST
+   Status              *StatusREST
+   EphemeralContainers *EphemeralContainersREST
+   Log                 *podrest.LogREST
+   Proxy               *podrest.ProxyREST
+   Exec                *podrest.ExecREST
+   Attach              *podrest.AttachREST
+   PortForward         *podrest.PortForwardREST
+}
+
+// REST implements a RESTStorage for pods
+type REST struct {
+	*genericregistry.Store
+	proxyTransport http.RoundTripper
+}
+```
+
+创建函数：
+
+```go
+// NewStorage returns a RESTStorage object that will work against pods.
+func NewStorage(optsGetter generic.RESTOptionsGetter, k client.ConnectionInfoGetter, proxyTransport http.RoundTripper, podDisruptionBudgetClient policyclient.PodDisruptionBudgetsGetter) (PodStorage, error) {
+
+   store := &genericregistry.Store{
+      NewFunc:                  func() runtime.Object { return &api.Pod{} },
+      NewListFunc:              func() runtime.Object { return &api.PodList{} },
+      PredicateFunc:            registrypod.MatchPod,
+      DefaultQualifiedResource: api.Resource("pods"),
+
+      CreateStrategy:      registrypod.Strategy,
+      UpdateStrategy:      registrypod.Strategy,
+      DeleteStrategy:      registrypod.Strategy,
+      ReturnDeletedObject: true,
+
+      TableConvertor: printerstorage.TableConvertor{TableGenerator: printers.NewTableGenerator().With(printersinternal.AddHandlers)},
+   }
+   options := &generic.StoreOptions{
+      RESTOptions: optsGetter,
+      AttrFunc:    registrypod.GetAttrs,
+      TriggerFunc: map[string]storage.IndexerFunc{"spec.nodeName": registrypod.NodeNameTriggerFunc},
+      Indexers:    registrypod.Indexers(),
+   }
+   if err := store.CompleteWithOptions(options); err != nil {
+      return PodStorage{}, err
+   }
+
+   statusStore := *store
+   statusStore.UpdateStrategy = registrypod.StatusStrategy
+   ephemeralContainersStore := *store
+   ephemeralContainersStore.UpdateStrategy = registrypod.EphemeralContainersStrategy
+
+   bindingREST := &BindingREST{store: store}
+   return PodStorage{
+      Pod:                 &REST{store, proxyTransport},
+      Binding:             &BindingREST{store: store},
+      LegacyBinding:       &LegacyBindingREST{bindingREST},
+      Eviction:            newEvictionStorage(store, podDisruptionBudgetClient),
+      Status:              &StatusREST{store: &statusStore},
+      EphemeralContainers: &EphemeralContainersREST{store: &ephemeralContainersStore},
+      Log:                 &podrest.LogREST{Store: store, KubeletConn: k},
+      Proxy:               &podrest.ProxyREST{Store: store, ProxyTransport: proxyTransport},
+      Exec:                &podrest.ExecREST{Store: store, KubeletConn: k},
+      Attach:              &podrest.AttachREST{Store: store, KubeletConn: k},
+      PortForward:         &podrest.PortForwardREST{Store: store, KubeletConn: k},
+   }, nil
+}
+```
+
+`pod`资源有`Get()`方法的实现：
+
+```go
+// StatusREST implements the REST endpoint for changing the status of a pod.
+type StatusREST struct {
+	store *genericregistry.Store
+}
+
+// Get retrieves the object from the storage. It is required to support Patch.
+func (r *StatusREST) Get(ctx context.Context, name string, options *metav1.GetOptions) (runtime.Object, error) {
+   return r.store.Get(ctx, name, options)
+}
+```
+
+进入到`r.store.Get()`里，链接到的是`registry/store.go`中`Store`结构体的`Get()`方法。
+
 ### 5.registry/dryrun.go
 
 这里隔了一层`dryrun`层，有些方法直接调用`s.Storage.Get(ctx, key, opts, objPtr)`，有些方法比如`create()`在创建前则需要判断下在`Storage`中是否已经存在相应的键，比如：
