@@ -2,8 +2,6 @@
 
 </br>
 
-有理解错误，后续修正...
-
 </br>
 
 
@@ -181,100 +179,38 @@ type StandardStorage interface {
 }
 ```
 
-### 4.registry/store.go
+### 4.cacher/cacher.go
 
-现在有了调用`Get()`的代码，但是具体的`Get()`实现逻辑在哪里呢？由于操作`etcd`存储需要通过`Storage`这个结构，所以调用了`Get()`就会链接到相应资源的`Storage`的Get方法的具体实现。
-
-先来看`Store`的结构：`registry/store.go`里有一个`Store`结构体，实现了`Get()`、` Create()`、` List()`等方法。
+来看看`r.get()`到底是谁在调用的呢？先找r的传入：其实是在长函数中生成handler的时候传入的getter：
 
 ```go
-// staging/src/k8s.io/apiserver/pkg/registry/generic/registry/store.go
-type Store struct {
-   NewFunc func() runtime.Object
-   NewListFunc func() runtime.Object
-   ...
-   // Storage is the interface for the underlying storage for the
-   // resource. It is wrapped into a "DryRunnableStorage" that will
-   // either pass-through or simply dry-run.
-   Storage DryRunnableStorage
-   
-   StorageVersioner runtime.GroupVersioner
-   ...
-}
+handler = restfulGetResource(getter, exporter, reqScope)
 ```
 
-其中有一个`DryRunnableStorage`类型的成员`Storage`，再看`DryRunnableStorage`结构体：
+这个getter哪里来的，就是长函数中测试当前storage是否支持get方法的时候返回的：
 
 ```go
-type DryRunnableStorage struct {
-   Storage storage.Interface
-   Codec   runtime.Codec
-}
+getter, isGetter := storage.(rest.Getter)
 ```
 
-里面才有最根本的`storage.Interface`类型的`Storage`。`Interface`接口提供了`Get()`、`List()`等方法
-
-```go
-type Interface interface {
-   Versioner() Versioner
-   Create(ctx context.Context, key string, obj, out runtime.Object, ttl uint64) error
-   Delete(ctx context.Context, key string, out runtime.Object, preconditions *Preconditions, validateDeletion ValidateObjectFunc) error
-   Watch(ctx context.Context, key string, opts ListOptions) (watch.Interface, error)
-   WatchList(ctx context.Context, key string, opts ListOptions) (watch.Interface, error)
-   Get(ctx context.Context, key string, opts GetOptions, objPtr runtime.Object) error
-   GetToList(ctx context.Context, key string, opts ListOptions, listObj runtime.Object) error
-   List(ctx context.Context, key string, opts ListOptions, listObj runtime.Object) error
-   GuaranteedUpdate(
-      ctx context.Context, key string, ptrToType runtime.Object, ignoreNotFound bool,
-      precondtions *Preconditions, tryUpdate UpdateFunc, suggestion ...runtime.Object) error
-   Count(key string) (int64, error)
-}
-```
-
-回到刚开始`Store`结构体实现的`Get()`方法，来看看具体做了什么事情：
-
-```go
-// Get retrieves the item from storage.
-func (e *Store) Get(ctx context.Context, name string, options *metav1.GetOptions) (runtime.Object, error) {
-   // 返回一个runtime.Object类型的接口，任何一个api资源都需要实现这个接口，
-   obj := e.NewFunc()
-   // 返回特定对象的键值
-   key, err := e.KeyFunc(ctx, name)
-   ...
-   // *
-   // Get到的对象应该在obj里
-   if err := e.Storage.Get(ctx, key, storage.GetOptions{ResourceVersion: options.ResourceVersion}, obj); err != nil {
-      return nil, storeerr.InterpretGetError(err, e.qualifiedResourceFromContext(ctx), name)
-   }
-   if e.Decorator != nil {
-     // Decorator()操作
-      if err := e.Decorator(obj); err != nil {
-         return nil, err
-      }
-   }
-   return obj, nil
-}
-```
-
-以`pod`资源为例来看看，在给`apis`注册路由的时候，调用了`InstallLegacyAPI()`函数，这个函数主要：
-
-- 通过`NewLegacyRESTStorage()`创建各个资源的`RESTStorage`
-- 通过`InstallLegacyAPIGroup()`完成路由安装（......[含长函数`registerResourceHandlers()`]）
-
-来看`pod`资源的`RESTStorage`创建过程：
+getter是一个rest.Getter类型，是一个接口，有Get方法：
 
 ~~~go
-podStorage, err := podstore.NewStorage(
-		restOptionsGetter,
-		nodeStorage.KubeletConnectionInfo,
-		c.ProxyTransport,
-		podDisruptionClient,
-	)
+type Getter interface {
+    Get(ctx context.Context, name string, options *v1.GetOptions) (runtime.Object, error)
+}
 ~~~
 
-来看`PodStorage`的结构：
+那么就去找这个storage所实现的get方法，以pod为例，先去追寻storage的生成过程：这个storage是存在APIGroupVersion中的，这个APIGroupVersion是在`/staging/src/k8s.io/apiserver/pkg/server/genericapiserver.go #installAPIResources()`中生成的：
+
+```
+apiGroupVersion := s.getAPIGroupVersion(apiGroupInfo, groupVersion, apiPrefix)
+```
+
+所以来看看storage的结构，以pod为例：
 
 ```go
+// pkg/registry/core/pod/storage/storage.go
 // PodStorage includes storage for pods and all sub resources
 type PodStorage struct {
    Pod                 *REST
@@ -289,105 +225,183 @@ type PodStorage struct {
    Attach              *podrest.AttachREST
    PortForward         *podrest.PortForwardREST
 }
+```
 
+当调用podstorage的get方法的时候，实际调用的是Pod成员的Get()方法，来看看Pod成员的类型：
+
+```go
 // REST implements a RESTStorage for pods
 type REST struct {
-	*genericregistry.Store
-	proxyTransport http.RoundTripper
+   *genericregistry.Store
+   proxyTransport http.RoundTripper
 }
 ```
 
-创建函数：
+可以看到实际调用的是*genericregistry.Store的DryRunnableStorage类型的Storage的 storage.Interface类型的Storage的Get()，其中最内层的Storage的创建是在`/vendor/k8s.io/apiserver/pkg/registry/store.go`里的：
+
+其中在`store.CompleteWithOptions()`的时候通过Decorator()会载入真正的后端`Storage`：
 
 ```go
-// NewStorage returns a RESTStorage object that will work against pods.
-func NewStorage(optsGetter generic.RESTOptionsGetter, k client.ConnectionInfoGetter, proxyTransport http.RoundTripper, podDisruptionBudgetClient policyclient.PodDisruptionBudgetsGetter) (PodStorage, error) {
+e.Storage.Storage, e.DestroyFunc, err = opts.Decorator(
+   opts.StorageConfig,
+   prefix,
+   keyFunc,
+   e.NewFunc,
+   e.NewListFunc,
+   attrFunc,
+   options.TriggerFunc,
+   options.Indexers,
+)
+```
 
-   store := &genericregistry.Store{
-      NewFunc:                  func() runtime.Object { return &api.Pod{} },
-      NewListFunc:              func() runtime.Object { return &api.PodList{} },
-      PredicateFunc:            registrypod.MatchPod,
-      DefaultQualifiedResource: api.Resource("pods"),
+这个opts的生成在上文中：
 
-      CreateStrategy:      registrypod.Strategy,
-      UpdateStrategy:      registrypod.Strategy,
-      DeleteStrategy:      registrypod.Strategy,
-      ReturnDeletedObject: true,
+```go
+opts, err := options.RESTOptions.GetRESTOptions(e.DefaultQualifiedResource)
+```
 
-      TableConvertor: printerstorage.TableConvertor{TableGenerator: printers.NewTableGenerator().With(printersinternal.AddHandlers)},
-   }
-   options := &generic.StoreOptions{
-      RESTOptions: optsGetter,
-      AttrFunc:    registrypod.GetAttrs,
-      TriggerFunc: map[string]storage.IndexerFunc{"spec.nodeName": registrypod.NodeNameTriggerFunc},
-      Indexers:    registrypod.Indexers(),
-   }
-   if err := store.CompleteWithOptions(options); err != nil {
-      return PodStorage{}, err
-   }
+而Decorator()函数就是在RESTOptions中：
 
-   statusStore := *store
-   statusStore.UpdateStrategy = registrypod.StatusStrategy
-   ephemeralContainersStore := *store
-   ephemeralContainersStore.UpdateStrategy = registrypod.EphemeralContainersStrategy
+```go
+// RESTOptions is set of configuration options to generic registries.
+type RESTOptions struct {
+   StorageConfig *storagebackend.Config
+   Decorator     StorageDecorator
 
-   bindingREST := &BindingREST{store: store}
-   return PodStorage{
-      Pod:                 &REST{store, proxyTransport},
-      Binding:             &BindingREST{store: store},
-      LegacyBinding:       &LegacyBindingREST{bindingREST},
-      Eviction:            newEvictionStorage(store, podDisruptionBudgetClient),
-      Status:              &StatusREST{store: &statusStore},
-      EphemeralContainers: &EphemeralContainersREST{store: &ephemeralContainersStore},
-      Log:                 &podrest.LogREST{Store: store, KubeletConn: k},
-      Proxy:               &podrest.ProxyREST{Store: store, ProxyTransport: proxyTransport},
-      Exec:                &podrest.ExecREST{Store: store, KubeletConn: k},
-      Attach:              &podrest.AttachREST{Store: store, KubeletConn: k},
-      PortForward:         &podrest.PortForwardREST{Store: store, KubeletConn: k},
-   }, nil
+   EnableGarbageCollection bool
+   DeleteCollectionWorkers int
+   ResourcePrefix          string
+   CountMetricPollPeriod   time.Duration
 }
 ```
 
-`pod`资源有`Get()`方法的实现：
+这个Decorator()函数执行载入操作，是一个StorageDecorator类型的函数，这个函数定义在`/edge/pkg/metamanager/storage.go #newREST()`中：
 
 ```go
-// StatusREST implements the REST endpoint for changing the status of a pod.
-type StatusREST struct {
-	store *genericregistry.Store
-}
-
-// Get retrieves the object from the storage. It is required to support Patch.
-func (r *StatusREST) Get(ctx context.Context, name string, options *metav1.GetOptions) (runtime.Object, error) {
-   return r.store.Get(ctx, name, options)
-}
+type StorageDecorator func(
+	config *storagebackend.Config,
+	resourcePrefix string,
+	keyFunc func(obj runtime.Object) (string, error),
+	newFunc func() runtime.Object,
+	newListFunc func() runtime.Object,
+	getAttrsFunc storage.AttrFunc,
+	trigger storage.IndexerFuncs,
+	indexers *cache.Indexers) (storage.Interface, factory.DestroyFunc, error)
 ```
 
-进入到`r.store.Get()`里，链接到的是`registry/store.go`中`Store`结构体的`Get()`方法。
-
-### 5.registry/dryrun.go
-
-这里隔了一层`dryrun`层，有些方法直接调用`s.Storage.Get(ctx, key, opts, objPtr)`，有些方法比如`create()`在创建前则需要判断下在`Storage`中是否已经存在相应的键，比如：
+依据其传入参数可以找到其定义过程：
 
 ```go
-func (s *DryRunnableStorage) Get(ctx context.Context, key string, opts storage.GetOptions, objPtr runtime.Object) error {
-  // 会返回一个对象
-	return s.Storage.Get(ctx, key, opts, objPtr)
-}
+// Creates a cacher based given storageConfig.
+func StorageWithCacher() generic.StorageDecorator {
+   return func(
+      storageConfig *storagebackend.Config,
+      resourcePrefix string,
+      keyFunc func(obj runtime.Object) (string, error),
+      newFunc func() runtime.Object,
+      newListFunc func() runtime.Object,
+      getAttrsFunc storage.AttrFunc,
+      triggerFuncs storage.IndexerFuncs,
+      indexers *cache.Indexers) (storage.Interface, factory.DestroyFunc, error) {
 
-func (s *DryRunnableStorage) Create(ctx context.Context, key string, obj, out runtime.Object, ttl uint64, dryRun bool) error {
-   if dryRun {
-      if err := s.Storage.Get(ctx, key, storage.GetOptions{}, out); err == nil {
-         return storage.NewKeyExistsError(key, 0)
+     	// 创建了真正的后端
+      s, d, err := generic.NewRawStorage(storageConfig, newFunc)
+      if err != nil {
+         return s, d, err
       }
-      return s.copyInto(obj, out)
+      if klog.V(5).Enabled() {
+         klog.Infof("Storage caching is enabled for %s", objectTypeToString(newFunc()))
+      }
+
+      cacherConfig := cacherstorage.Config{
+         Storage:        s,
+         Versioner:      etcd3.APIObjectVersioner{},
+         ResourcePrefix: resourcePrefix,
+         KeyFunc:        keyFunc,
+         NewFunc:        newFunc,
+         NewListFunc:    newListFunc,
+         GetAttrsFunc:   getAttrsFunc,
+         IndexerFuncs:   triggerFuncs,
+         Indexers:       indexers,
+         Codec:          storageConfig.Codec,
+      }
+      cacher, err := cacherstorage.NewCacherFromConfig(cacherConfig)
+      if err != nil {
+         return nil, func() {}, err
+      }
+      destroyFunc := func() {
+         cacher.Stop()
+         d()
+      }
+
+      // TODO : Remove RegisterStorageCleanup below when PR
+      // https://github.com/kubernetes/kubernetes/pull/50690
+      // merges as that shuts down storage properly
+      RegisterStorageCleanup(destroyFunc)
+
+      return cacher, destroyFunc, nil
    }
-   return s.Storage.Create(ctx, key, obj, out, ttl)
 }
 ```
 
-`s.Storage.Get()`会调用`DryRunnableStorage`结构体中的`storage.Interface`类型的`Storage`成员的`Get()`方法，`Interface`接口上面已经展示，但具体的函数逻辑需要通过后续后端存储`etcd`来实现。
+注意其返回的是一个cacher，那么来看这个cacher实现的方法里有什么，没错就是get()/list()等等，也就是最开始r.get()所真实调用的函数：
 
-### 6.etcd3/store.go
+```go
+// Get implements storage.Interface.
+func (c *Cacher) Get(ctx context.Context, key string, opts storage.GetOptions, objPtr runtime.Object) error {
+   if opts.ResourceVersion == "" {
+      // If resourceVersion is not specified, serve it from underlying
+      // storage (for backward compatibility).
+      return c.storage.Get(ctx, key, opts, objPtr)
+   }
+
+   // If resourceVersion is specified, serve it from cache.
+   // It's guaranteed that the returned value is at least that
+   // fresh as the given resourceVersion.
+   getRV, err := c.versioner.ParseResourceVersion(opts.ResourceVersion)
+   if err != nil {
+      return err
+   }
+
+   if getRV == 0 && !c.ready.check() {
+      // If Cacher is not yet initialized and we don't require any specific
+      // minimal resource version, simply forward the request to storage.
+      return c.storage.Get(ctx, key, opts, objPtr)
+   }
+
+   // Do not create a trace - it's not for free and there are tons
+   // of Get requests. We can add it if it will be really needed.
+   c.ready.wait()
+
+   objVal, err := conversion.EnforcePtr(objPtr)
+   if err != nil {
+      return err
+   }
+
+   obj, exists, readResourceVersion, err := c.watchCache.WaitUntilFreshAndGet(getRV, key, nil)
+   if err != nil {
+      return err
+   }
+
+   if exists {
+      elem, ok := obj.(*storeElement)
+      if !ok {
+         return fmt.Errorf("non *storeElement returned from storage: %v", obj)
+      }
+      objVal.Set(reflect.ValueOf(elem.Object).Elem())
+   } else {
+      objVal.Set(reflect.Zero(objVal.Type()))
+      if !opts.IgnoreNotFound {
+         return storage.NewKeyNotFoundError(key, int64(readResourceVersion))
+      }
+   }
+   return nil
+}
+```
+
+`c.Storage.Get()`会调用`Cacher`结构体中的`storage.Interface`类型的`Storage`成员的`Get()`方法，`Interface`接口上面已经展示，但具体的函数逻辑需要通过后续后端存储`etcd`来实现。
+
+### 5.etcd3/store.go
 
 有了`Storage`对象之后就可以操作具体的`etcd`了，由于现在后端存储基本上是`etcd3`，所以来看看`etcd3`中不同操作的具体实现逻辑：
 
@@ -442,7 +456,7 @@ func (s *store) Get(ctx context.Context, key string, opts storage.GetOptions, ou
 
 至此，`handler`怎么通过层层调用去操作`etcd`的过程结束，回到2中，现在已经取回obj，然后需要构造响应并返回。
 
-### 7.构建响应
+### 6.构建响应
 
 ```go
 // 前文回顾========================
@@ -511,7 +525,7 @@ func WriteObjectNegotiated(s runtime.NegotiatedSerializer, restrictions negotiat
 }
 ```
 
-### 8.Server服务过程
+### 7.Server服务过程
 
 以上内容都是`handler`的相关过程，没有涉及到`server`监听请求并调用`handler`的过程，以下进行介绍。
 
