@@ -14,7 +14,7 @@ kube-apiserver作为整个Kubernetes集群操作etcd的唯一入口，负责Kube
 
 APIServer本质其实是一个负责监听（http/https）指定端口的server，之后处理不同的请求。
 
-至于什么是Server？文章参考：[HTTP Server的理解](file:HTTPServer的理解)
+至于什么是Server？文章参考：[HTTP Server的理解](./HTTP Server的理解.md)
 
 </br>
 
@@ -50,9 +50,9 @@ Kubernetes 把所有资源都保存在注册表（Registry）中，针对注册�
 
 通过 KV 持久化存储 Kubernetes 对象，API Server 就是利用 ETCD 的 Watch 特性实现了经典 List-Watch 机制。
 
-List-Watch 机制内容参考：[关于informer的分享](file:关于informer的分享)
+List-Watch 机制内容参考：[关于informer的分享](./关于informer的分享.md)
 
-在有了rest.Storage之后，其仅仅是一个接口，又何德何能可以真正的操作etcd呢？文章参考：[APIServer与etcd的交互](file:APIServer与etcd的交互)
+在有了rest.Storage之后，其仅仅是一个接口，又何德何能可以真正的操作etcd呢？文章参考：[APIServer与etcd的交互](./APIServer与etcd的交互.md)
 
 </br>
 
@@ -87,9 +87,9 @@ func Run(completeOptions completedServerRunOptions, stopCh <-chan struct{}) erro
 
 其中：
 
-第一步具体实现分析参考：[APIServer源码分析之创建](file:APIServer源码分析之创建)
+第一步具体实现分析参考：[APIServer源码分析之创建](./APIServer源码分析之创建.md)
 
-第二、三两步具体实现分析参考：[APIServer源码分析之启动](file:APIServer源码分析之启动)
+第二、三两步具体实现分析参考：[APIServer源码分析之启动](./APIServer源码分析之启动.md)
 
 </br>
 
@@ -115,17 +115,17 @@ func Run(completeOptions completedServerRunOptions, stopCh <-chan struct{}) erro
 
 ## 内容总览
 
-[HTTP Server的理解](file:HTTPServer的理解)
+[HTTP Server的理解](./HTTP Server的理解.md)
 
-[关于informer的分享](file:关于informer的分享)
+[关于informer的分享](./关于informer的分享.md)
 
-[APIServer与etcd的交互](file:APIServer与etcd的交互)
+[APIServer与etcd的交互](./APIServer与etcd的交互.md)
 
-[APIServer源码分析之创建](file:APIServer源码分析之创建)
+[APIServer源码分析之创建](./APIServer源码分析之创建.md)
 
-​		- [APIServer路由请求实现](file:APIServer路由请求实现)
+​		- [APIServer路由请求实现](./APIServer路由请求实现.md)
 
-[APIServer源码分析之启动](file:APIServer源码分析之启动)
+[APIServer源码分析之启动](./APIServer源码分析之启动.md)
 
 
 

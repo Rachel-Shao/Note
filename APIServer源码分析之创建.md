@@ -607,7 +607,7 @@ func (a *APIInstaller) registerResourceHandlers(path string, storage rest.Storag
 
 </br>
 
-其中，route加入到webService之后，怎么加入Container，Container又是怎么被识别的？具体内容参考：[APIServer路由请求实现](file:APIServer路由请求实现)
+其中，route加入到webService之后，怎么加入Container，Container又是怎么被识别的？具体内容参考：[APIServer路由请求实现](./APIServer路由请求实现.md)
 
 至此API的注册过程全部结束，后面APIServer接收到一个rest请求就会根据RestfulContainer里面的handler来进行处理。
 
